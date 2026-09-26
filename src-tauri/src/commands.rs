@@ -3059,7 +3059,9 @@ pub fn set_clipboard_media_enabled(image: bool, file: bool) -> Result<(), String
     Ok(())
 }
 
-/// 导出图片快照到用户指定路径（复制快照文件，不移动）
+/// 导出图片快照到用户指定路径（不移动原文件）。
+/// 截图类应用往剪贴板写的是 CF_DIB 位图、快照落盘为 .bmp，导出为 .png 时在此
+/// 转码（`clipboard::transcode_image_bytes`），格式一致则原样写入。
 #[tauri::command]
 pub fn clipboard_export_image(
     state: State<'_, DbState>,
@@ -3069,7 +3071,13 @@ pub fn clipboard_export_image(
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let item = clipboard::get(&conn, id).map_err(err_str)?;
     let src = item.image_path.as_deref().ok_or("图片快照缺失")?;
-    std::fs::copy(src, &dest).map_err(|e| format!("保存图片失败: {}", e))?;
+    let bytes = std::fs::read(src).map_err(|e| format!("读取图片快照失败: {}", e))?;
+    let ext = std::path::Path::new(&dest)
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let data = crate::clipboard::transcode_image_bytes(&bytes, &ext)?;
+    std::fs::write(&dest, data).map_err(|e| format!("保存图片失败: {}", e))?;
     Ok(())
 }
 
